@@ -1,11 +1,13 @@
 #!/bin/bash
 
+# PS4='+($?) $BASH_SOURCE:$FUNCNAME:$LINENO:'; set -x
+
 if [ "$(whoami)" == 'root' ]; then
    echo "Must not be run as root."
    exit 1;
 fi
 
-exe() { echo "\$" "$@" ; "$@" ; }
+exe() { echo "\$" "$*" ; "$@" ; }
 
 var() {
   if [ -z "$PPADIR" ]; then
@@ -63,7 +65,7 @@ package_build() {
   fi
   repo_name="$1"
   package_name=$2
-  setup "$@"
+  setup
   pkgdir="${basedir}"/src/"${package_name}"
   if [ ! -d "${pkgdir}" ]; then
       echo "Package \"${package_name}\" not found in \"${pkgdir}\""
@@ -87,17 +89,17 @@ package_build() {
   done
   # Build package:
   cd "${pkgdir}"
-  rm -f ./*glob*.pkg.tar.xz
+  rm -f ./*.pkg.tar.xz
   mkdir -p "${basedir}"/"${repo_name}"
   exe makechrootpkg -r "${chroot}" -l "${repo_name}" -- -i
-  exe mv ./*glob*.pkg.tar.xz "${basedir}"/"${repo_name}"
+  exe mv ./*.pkg.tar.xz "${basedir}"/"${repo_name}/"
     )
 }
 
 sign_packages() {
     if [ "$#" -lt 1 ]; then
-  echo "sign_packages requires specifying the list of packages to sign"
-  return 1
+      echo "sign_packages requires specifying the list of packages to sign"
+      return 1
     fi
     (
   set -e
@@ -112,7 +114,7 @@ find_deps() {
     # Inspect package srcinfo and pull out the dependencies that we maintain in src
     (
   set -e
-  setup "$@"
+  setup
   cat "${basedir}"/src/"$1"/.SRCINFO | sed -nr 's/^\W*depends = ([-a-zA-Z0-9]+).*$/\1/p' | while read -r dep; do
       if [ -d "${basedir}"/src/"${dep}" ]; then
         echo "${dep}"
@@ -129,7 +131,7 @@ add() {
       echo "Must specify package(s) to add"
       return 1
   fi
-  setup "$@"
+  setup
   if [ ! -d "${basedir}"/src ]; then
       mkdir "${basedir}"/src
   fi
@@ -139,7 +141,7 @@ add() {
   sudo chown "$USER" -R "${basedir}"/src
   cd "${basedir}"
   git add src
-  git commit -m "Package(s) "./*glob* "$@" ./*glob*" added to src/"
+  git commit -m "Package(s) $* added to src/"
   echo "## All requested packages added"
    )
 }
@@ -154,7 +156,7 @@ remove() {
     cd "${basedir}"
     git rm -r src/"${pkg}"
   done
-  git commit -m "Package(s) "./*glob* "$@" ./*glob*" removed from src/"
+  git commit -m "Package(s) $* removed from src/"
   echo "## All requested packages removed from src/"
   echo "## Make sure you run arch-ppa clean <repo> if removed packages were already built"
 }
@@ -165,7 +167,7 @@ update() {
   set -e
   if [ "$#" -eq 0 ]; then
       cd "${basedir}"/src
-      update ./*glob*
+      update ./*
       return
   fi
   for pkg in "$@"; do
@@ -175,30 +177,11 @@ update() {
       fi
   done
   for pkg in "$@"; do
-      check_in_git() {
-    (
-        cd "${basedir}"
-        if (! git ls-files "$1" --error-unmatch >/dev/null 2>&1); then
-      echo "\"$1\" is not under git control yet. Add and commit it before updating."
-      return 1
-        fi
-    )
-      }
-      check_in_git "${basedir}"/src
-      check_in_git "${basedir}"/src/"${pkg}"
-      find_deps "${pkg}" | while read -r dep; do
-        check_in_git "${basedir}"/src/"${dep}"
-      done
-      # Check if package has uncommited changes
-      if [ "$(git -C "${basedir}" diff HEAD "${basedir}"/src/"${pkg}" | wc -l)" -gt 0 ]; then
-        echo "Package \"${pkg}\" has uncommited changes. Commit or discard those changes first."
-        return 1
-      fi
       # Use a temporary dir to download all PKGBUILDS atomically
-            [ -z "$tmp_dl" ] && tmp_dl="$(mktemp -d)"
-            cd "$tmp_dl"
-            arch-nspawn "${chroot}"/root --bind="$tmp_dl":/src cower -q -t /src -d -d "${pkg}" >/dev/null 2>&1
-      cp -a ./*glob* "${basedir}"/src
+      [ -z "$tmp_dl" ] && tmp_dl="$(mktemp -d)"
+      cd "$tmp_dl"
+      arch-nspawn "${chroot}"/root --bind="$tmp_dl":/src cower -q -t /src -d -d "${pkg}" >/dev/null 2>&1
+      cp -a ./* "${basedir}"/src
   done
   git -C "${basedir}" diff --name-status "${basedir}"/src/
   cd "${basedir}"
@@ -213,7 +196,7 @@ list() {
   echo "Must specify repository name to list"
   return 1
     fi
-    setup "$@"
+    setup
     arch-nspawn "${chroot}"/"$1" pacman -Qm
 }
 
@@ -268,7 +251,7 @@ build() {
       echo "Must specify repository name to build (and optional package list to include)"
       return 1
   fi
-  setup "$@"
+  setup
   repo_name="$1"
   echo "${repo_name}/" >> "${basedir}"/.gitignore
   mkdir -p "${basedir}"/"${repo_name}"
@@ -289,12 +272,12 @@ build() {
   fi
   echo "## Updating repository database"
   cd "${basedir}"/"${repo_name}"
-  if [ "$(ls ./*glob*.pkg.tar.xz 2> /dev/null | wc -l)" -lt 1 ]; then
+  if [ "$(ls ./*.pkg.tar.xz 2> /dev/null | wc -l)" -lt 1 ]; then
       echo "No packages found in \"${basedir}\"/\"${repo_name}\""
       return 1;
   fi
-  sign_packages ./*glob*.pkg.tar.xz
-  repo-add "${repo_name}".db.tar.gz ./*glob*.pkg.tar.xz
+  sign_packages ./*.pkg.tar.xz
+  repo-add "${repo_name}".db.tar.gz ./*.pkg.tar.xz
   sign_packages "${repo_name}".db
     )
 }
