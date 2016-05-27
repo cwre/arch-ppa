@@ -1,3 +1,7 @@
+# DEAD
+===========
+I'm using [aurutils](https://bbs.archlinux.org/viewtopic.php?id=210621) now.
+
 arch-ppa
 ========
 
